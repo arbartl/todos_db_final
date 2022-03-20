@@ -6,7 +6,7 @@ gem "erubis"
 
 gem "pg"
 
-ruby "2.7.0"
+ruby "2.7.4"
 
 group :production do
   gem "puma"
