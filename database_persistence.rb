@@ -2,7 +2,7 @@ require "pg"
 
 class DatabasePersistence
   def initialize(logger)
-    @db = if Sinatra::Based.production?
+    @db = if Sinatra::Base.production?
             PG.connect(ENV['DATABASE URL'])
           else
             PG.connect(dbname: "todos")
@@ -16,25 +16,34 @@ class DatabasePersistence
   end
 
   def find_list(id)
-    sql = "SELECT * FROM lists WHERE id = $1"
+    sql = <<~SQL
+      SELECT lists.*,
+             COUNT(NULLIF(todos.completed, true)) AS todos_remaining,
+             COUNT(todos.id) AS todos_count
+        FROM lists
+        LEFT JOIN todos ON todos.list_id = lists.id
+        WHERE lists.id = $1
+        GROUP BY lists.id
+        ORDER BY lists.name;
+    SQL
     result = query(sql, id)
-
-    tuple = result.first
-
-    list_id = tuple["id"].to_i
-    todos = fetch_todos(list_id)
-    {id: list_id, name: tuple["name"], todos: todos}
+    tuple_to_list_hash(result.first)
   end
 
   def all_lists
-    sql = "SELECT * FROM lists;"
+    sql = <<~SQL
+      SELECT lists.*,
+             COUNT(NULLIF(todos.completed, true)) AS todos_remaining,
+             COUNT(todos.id) AS todos_count
+        FROM lists
+        LEFT JOIN todos ON todos.list_id = lists.id
+        GROUP BY lists.id
+        ORDER BY lists.name;
+    SQL
     result = query(sql)
 
     result.map do |tuple|
-      list_id = tuple["id"].to_i
-      todos = fetch_todos(list_id)
-
-      {id: list_id, name: tuple["name"], todos: todos}
+      tuple_to_list_hash(tuple)
     end
   end
 
@@ -84,8 +93,6 @@ class DatabasePersistence
     @db.close
   end
 
-  private
-
   def fetch_todos(id)
     sql = "SELECT * FROM todos WHERE list_id = $1"
     result = query(sql, id)
@@ -94,5 +101,14 @@ class DatabasePersistence
         name: tuple["name"],
         completed: tuple["completed"] == "t" }
     end
+  end
+
+  private
+
+  def tuple_to_list_hash(tuple)
+    { id: tuple["id"].to_i,
+    name: tuple["name"],
+    todos_count: tuple["todos_count"].to_i,
+    todos_remaining: tuple["todos_remaining"].to_i }
   end
 end
